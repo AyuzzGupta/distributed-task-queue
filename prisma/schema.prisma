@@ -1,0 +1,84 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum JobStatus {
+  PENDING
+  SCHEDULED
+  PROCESSING
+  COMPLETED
+  FAILED
+  DEAD
+  CANCELLED
+}
+
+enum JobPriority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+model Job {
+  id                String      @id @default(uuid()) @db.Uuid
+  queue             String      @default("default")
+  type              String      // Handler type identifier (e.g., "send-email", "process-image")
+  priority          JobPriority @default(MEDIUM)
+  status            JobStatus   @default(PENDING)
+  payload           Json        // Job payload data
+  result            Json?       // Job result data on completion
+  error             String?     // Error message on failure
+  idempotencyKey    String?     @unique @map("idempotency_key")
+  attempts          Int         @default(0)
+  maxRetries        Int         @default(5) @map("max_retries")
+  scheduledAt       DateTime?   @map("scheduled_at")
+  lockedBy          String?     @map("locked_by")
+  lockedAt          DateTime?   @map("locked_at")
+  visibilityTimeout Int         @default(30000) @map("visibility_timeout") // milliseconds
+  completedAt       DateTime?   @map("completed_at")
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+
+  history JobHistory[]
+
+  @@index([queue, status, priority, scheduledAt], name: "idx_job_queue_dequeue")
+  @@index([status], name: "idx_job_status")
+  @@index([lockedBy], name: "idx_job_locked_by")
+  @@index([scheduledAt], name: "idx_job_scheduled")
+  @@index([createdAt], name: "idx_job_created")
+  @@map("jobs")
+}
+
+model JobHistory {
+  id        String   @id @default(uuid()) @db.Uuid
+  jobId     String   @map("job_id") @db.Uuid
+  status    String   // Status at this point
+  message   String?  // Optional context message
+  workerId  String?  @map("worker_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, createdAt], name: "idx_history_job_timeline")
+  @@map("job_history")
+}
+
+model WorkerHeartbeat {
+  workerId      String   @id @map("worker_id")
+  hostname      String
+  queues        String[] // Queues this worker subscribes to
+  concurrency   Int      @default(10)
+  activeJobs    Int      @default(0) @map("active_jobs")
+  lastHeartbeat DateTime @default(now()) @map("last_heartbeat")
+  startedAt     DateTime @default(now()) @map("started_at")
+
+  @@index([lastHeartbeat], name: "idx_heartbeat_last")
+  @@map("worker_heartbeats")
+}

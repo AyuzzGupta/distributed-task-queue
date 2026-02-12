@@ -1,0 +1,115 @@
+version: "3.8"
+
+services:
+  # ─── PostgreSQL ──────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: taskqueue-postgres
+    environment:
+      POSTGRES_USER: taskqueue
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taskqueue_pass}
+      POSTGRES_DB: taskqueue
+    # Ports NOT exposed externally for security — only accessible from Docker network
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U taskqueue" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+
+  # ─── Redis ──────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: taskqueue-redis
+    # Ports NOT exposed externally for security — only accessible from Docker network
+    volumes:
+      - redisdata:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:-redis_secure_pass}
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_secure_pass}", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+
+  # ─── API Server ─────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: taskqueue-api
+    environment:
+      DATABASE_URL: postgresql://taskqueue:${POSTGRES_PASSWORD:-taskqueue_pass}@postgres:5432/taskqueue?schema=public
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secure_pass}@redis:6379
+      API_PORT: 3000
+      API_HOST: 0.0.0.0
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin@123!}
+      EMPLOYEE_PASSWORD: ${EMPLOYEE_PASSWORD:-employee@123!}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+
+  # ─── Worker ─────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      DATABASE_URL: postgresql://taskqueue:${POSTGRES_PASSWORD:-taskqueue_pass}@postgres:5432/taskqueue?schema=public
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secure_pass}@redis:6379
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin@123!}
+      EMPLOYEE_PASSWORD: ${EMPLOYEE_PASSWORD:-employee@123!}
+      WORKER_CONCURRENCY: 10
+      WORKER_QUEUES: default,emails,notifications
+      WORKER_ID: worker-${HOSTNAME:-1}
+      DEFAULT_MAX_RETRIES: 5
+      RETRY_BASE_DELAY_MS: 1000
+      VISIBILITY_TIMEOUT_MS: 30000
+      POISON_PILL_THRESHOLD: 3
+      POISON_PILL_WINDOW_MS: 60000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    # Scale with: docker-compose up --scale worker=N
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+
+volumes:
+  pgdata:
+  redisdata:
