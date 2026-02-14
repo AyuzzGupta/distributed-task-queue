@@ -324,10 +324,12 @@ async function loadOverview() {
 }
 
 function updateHealthCards(health) {
-    const pgUp = health.dependencies?.postgres?.status === 'up';
-    const redisUp = health.dependencies?.redis?.status === 'up';
-    const pgLatency = health.dependencies?.postgres?.latencyMs;
-    const redisLatency = health.dependencies?.redis?.latencyMs;
+    const pg = health.checks?.postgresql || health.checks?.postgres || health.dependencies?.postgres || {};
+    const redis = health.checks?.redis || health.dependencies?.redis || {};
+    const pgUp = pg.status === 'ok' || pg.status === 'up';
+    const redisUp = redis.status === 'ok' || redis.status === 'up';
+    const pgLatency = pg.latencyMs;
+    const redisLatency = redis.latencyMs;
 
     document.getElementById('pgStatus').textContent = pgUp ? 'Connected' : 'Down';
     document.getElementById('pgStatus').style.color = pgUp ? 'var(--success)' : 'var(--danger)';
