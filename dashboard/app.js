@@ -453,14 +453,16 @@ function renderJobsTable(jobs) {
     tbody.innerHTML = jobs.map(job => {
         const canRetry = ['FAILED', 'DEAD', 'CANCELLED'].includes(job.status);
         const canCancel = ['PENDING', 'SCHEDULED'].includes(job.status);
-        const actions = isAdmin ? `
+        const canComplete = job.status === 'PROCESSING';
+        const actions = `
             <td>
                 <div style="display:flex;gap:6px">
-                    ${canRetry ? `<button class="btn btn-success btn-sm" onclick="retryJob('${job.id}')">Retry</button>` : ''}
-                    ${canCancel ? `<button class="btn btn-danger btn-sm" onclick="cancelJob('${job.id}')">Cancel</button>` : ''}
+                    ${canComplete ? `<button class="btn btn-success btn-sm" onclick="completeJob('${job.id}')">✓ Complete</button>` : ''}
+                    ${isAdmin && canRetry ? `<button class="btn btn-success btn-sm" onclick="retryJob('${job.id}')">Retry</button>` : ''}
+                    ${isAdmin && canCancel ? `<button class="btn btn-danger btn-sm" onclick="cancelJob('${job.id}')">Cancel</button>` : ''}
                 </div>
             </td>
-        ` : '';
+        `;
 
         return `
             <tr>
@@ -510,6 +512,16 @@ async function cancelJob(id) {
         loadPage(currentPage);
     } catch (err) {
         showToast(err.message || 'Cancel failed', 'error');
+    }
+}
+
+async function completeJob(id) {
+    try {
+        await apiFetch(`/jobs/${id}/complete`, { method: 'POST' });
+        showToast('Job marked as completed!', 'success');
+        loadPage(currentPage);
+    } catch (err) {
+        showToast(err.message || 'Complete failed', 'error');
     }
 }
 
@@ -596,6 +608,7 @@ async function openJobDetail(id) {
                 <div class="detail-item"><span class="detail-label">Attempts</span><span class="detail-value">${job.attempts || 0}${job.maxRetries !== undefined ? ` / ${job.maxRetries}` : ''}</span></div>
                 <div class="detail-item"><span class="detail-label">Created</span><span class="detail-value">${formatDate(job.createdAt)}</span></div>
                 <div class="detail-item"><span class="detail-label">Completed</span><span class="detail-value">${job.completedAt ? formatDate(job.completedAt) : '—'}</span></div>
+                ${job.completedBy ? `<div class="detail-item"><span class="detail-label">Completed By</span><span class="detail-value" style="color:var(--success);font-weight:600">${esc(job.completedBy)}</span></div>` : ''}
             </div>
 
             ${job.payload ? `<div class="detail-item"><span class="detail-label">Payload</span><div class="payload-block">${esc(JSON.stringify(job.payload, null, 2))}</div></div>` : ''}
@@ -618,8 +631,9 @@ async function openJobDetail(id) {
                 </div>
             ` : ''}
 
-            ${canRetry || canCancel ? `
+            ${canRetry || canCancel || job.status === 'PROCESSING' ? `
                 <div class="modal-actions">
+                    ${job.status === 'PROCESSING' ? `<button class="btn btn-success" onclick="completeJob('${job.id}');document.getElementById('modalOverlay').classList.remove('active')">✓ Complete Job</button>` : ''}
                     ${canRetry ? `<button class="btn btn-success" onclick="retryJob('${job.id}');document.getElementById('modalOverlay').classList.remove('active')">Retry Job</button>` : ''}
                     ${canCancel ? `<button class="btn btn-danger" onclick="cancelJob('${job.id}');document.getElementById('modalOverlay').classList.remove('active')">Cancel Job</button>` : ''}
                 </div>
@@ -696,3 +710,4 @@ function silentError(msg) {
 window.openJobDetail = openJobDetail;
 window.retryJob = retryJob;
 window.cancelJob = cancelJob;
+window.completeJob = completeJob;

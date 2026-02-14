@@ -228,6 +228,51 @@ export default async function jobRoutes(fastify: FastifyInstance): Promise<void>
         },
     });
 
+    // ─── POST /jobs/:id/complete — Mark a job as completed ────────
+
+    fastify.post('/jobs/:id/complete', {
+        preHandler: [fastify.authenticate],
+        handler: async (request, reply) => {
+            const { id } = JobIdParamsSchema.parse(request.params);
+            const user = request.user as any;
+
+            const job = await prisma.job.findUnique({ where: { id } });
+            if (!job) {
+                throw new NotFoundError('Job', id);
+            }
+
+            if (job.status !== 'PROCESSING') {
+                throw new ConflictError(`Cannot complete job with status '${job.status}'. Only PROCESSING jobs can be completed.`);
+            }
+
+            const updatedJob = await prisma.job.update({
+                where: { id },
+                data: {
+                    status: 'COMPLETED',
+                    completedAt: new Date(),
+                    completedBy: user.sub || 'Unknown',
+                    lockedBy: null,
+                    lockedAt: null,
+                },
+            });
+
+            await prisma.jobHistory.create({
+                data: {
+                    jobId: job.id,
+                    status: 'COMPLETED',
+                    message: `Completed by ${user.sub || 'Unknown'}`,
+                },
+            });
+
+            // Remove from Redis queue
+            await removeFromQueue(job.queue, job.id);
+
+            logger.info({ jobId: job.id, completedBy: user.sub }, 'Job manually completed');
+
+            return reply.send({ job: updatedJob });
+        },
+    });
+
     // ─── GET /jobs — List jobs (with filters) ─────────────────────
 
     fastify.get('/jobs', {
