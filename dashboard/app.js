@@ -453,7 +453,7 @@ function renderJobsTable(jobs) {
     tbody.innerHTML = jobs.map(job => {
         const canRetry = ['FAILED', 'DEAD', 'CANCELLED'].includes(job.status);
         const canCancel = ['PENDING', 'SCHEDULED'].includes(job.status);
-        const canComplete = job.status === 'PROCESSING';
+        const canComplete = ['PENDING', 'PROCESSING'].includes(job.status);
         const actions = `
             <td>
                 <div style="display:flex;gap:6px">
@@ -631,9 +631,9 @@ async function openJobDetail(id) {
                 </div>
             ` : ''}
 
-            ${canRetry || canCancel || job.status === 'PROCESSING' ? `
+            ${canRetry || canCancel || ['PENDING', 'PROCESSING'].includes(job.status) ? `
                 <div class="modal-actions">
-                    ${job.status === 'PROCESSING' ? `<button class="btn btn-success" onclick="completeJob('${job.id}');document.getElementById('modalOverlay').classList.remove('active')">✓ Complete Job</button>` : ''}
+                    ${['PENDING', 'PROCESSING'].includes(job.status) ? `<button class="btn btn-success" onclick="completeJob('${job.id}');document.getElementById('modalOverlay').classList.remove('active')">✓ Complete Job</button>` : ''}
                     ${canRetry ? `<button class="btn btn-success" onclick="retryJob('${job.id}');document.getElementById('modalOverlay').classList.remove('active')">Retry Job</button>` : ''}
                     ${canCancel ? `<button class="btn btn-danger" onclick="cancelJob('${job.id}');document.getElementById('modalOverlay').classList.remove('active')">Cancel Job</button>` : ''}
                 </div>

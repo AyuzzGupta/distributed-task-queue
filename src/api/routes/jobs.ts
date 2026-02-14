@@ -241,8 +241,8 @@ export default async function jobRoutes(fastify: FastifyInstance): Promise<void>
                 throw new NotFoundError('Job', id);
             }
 
-            if (job.status !== 'PROCESSING') {
-                throw new ConflictError(`Cannot complete job with status '${job.status}'. Only PROCESSING jobs can be completed.`);
+            if (!['PENDING', 'PROCESSING'].includes(job.status)) {
+                throw new ConflictError(`Cannot complete job with status '${job.status}'. Only PENDING or PROCESSING jobs can be completed.`);
             }
 
             const updatedJob = await prisma.job.update({
